@@ -13,3 +13,15 @@ TaskMoment 是一款简洁高效的在线任务管理工具，旨在帮助用户
 
 - [x] 创建一个仓库
 - [ ] 添加用户登录和注册功能
+
+## 环境搭建
+
+```bash
+conda create -n TaskMoment python=3.12 -y
+conda activate TaskMoment
+git clone https://github.com/boomytc/TaskMoment.git
+cd TaskMoment
+```
+
+
+
