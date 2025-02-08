@@ -13,15 +13,54 @@ TaskMoment 是一款简洁高效的在线任务管理工具，旨在帮助用户
 
 - [x] 创建一个仓库
 - [ ] 添加用户登录和注册功能
+- [ ] 完善数据库设计
+- [ ] 实现前端界面
+- [ ] 添加任务管理功能
 
 ## 环境搭建
 
+1. 创建并激活 Python 环境
 ```bash
 conda create -n TaskMoment python=3.12 -y
 conda activate TaskMoment
+```
+
+2. 克隆项目
+```bash
 git clone https://github.com/boomytc/TaskMoment.git
 cd TaskMoment
 ```
+
+3. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+## 数据库配置
+
+在项目根目录创建 `.env` 文件，配置以下环境变量：
+
+```env
+DB_HOST=your_database_host
+DB_PORT=your_database_port
+DB_USER=your_database_user
+DB_PASSWORD=your_database_password
+DB_NAME=your_database_name
+```
+
+## 项目结构
+
+```
+TaskMoment/
+│
+├── demo/                  # 示例代码
+│   └── test/             
+│       ├── connect/      # 数据库连接示例
+│       ├── insert/       # 数据插入示例
+│       └── delete/       # 数据删除示例
+│
+├── requirements.txt      # 项目依赖
+└── README.md            # 项目说明文档
 
 
 
