@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务清单</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>任务清单</h1>
+        <div class="task-input">
+            <input type="text" id="newTask" placeholder="添加新任务...">
+            <button onclick="addTask()">添加</button>
+        </div>
+        <div class="task-list" id="taskList">
+            <!-- 任务列表将通过JavaScript动态加载 -->
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
