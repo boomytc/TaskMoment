@@ -1,3 +1,49 @@
+// 获取模态框元素
+const modal = document.getElementById('editModal');
+const closeBtn = document.querySelector('.close');
+const saveTaskBtn = document.getElementById('saveTaskBtn');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
+let currentEditingTaskId = null;
+
+// 初始化日期选择器的点击处理
+document.addEventListener('DOMContentLoaded', function() {
+    const dateInput = document.getElementById('taskDueDate');
+    const dateContainer = document.querySelector('.date-input-container');
+
+    // 阻止日期选择器的点击事件冒泡
+    dateInput.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+
+    // 点击容器时手动触发日期选择器
+    dateContainer.addEventListener('click', function(e) {
+        if (e.target === dateContainer) {
+            dateInput.showPicker();
+        }
+    });
+});
+
+// 关闭模态框
+function closeModal() {
+    modal.style.display = 'none';
+}
+
+// 打开模态框
+function openModal() {
+    modal.style.display = 'block';
+}
+
+// 点击模态框外部关闭
+window.onclick = function(event) {
+    if (event.target === modal) {
+        closeModal();
+    }
+}
+
+// 关闭按钮事件
+closeBtn.onclick = closeModal;
+cancelEditBtn.onclick = closeModal;
+
 // 获取所有任务
 async function fetchTasks() {
     const response = await fetch('/api/tasks');
@@ -16,9 +62,12 @@ function renderTasks(tasks) {
         taskElement.innerHTML = `
             <input type="checkbox" ${task.completed ? 'checked' : ''} 
                    onchange="toggleTask(${task.id}, this.checked)">
-            <span class="task-content">${task.title}</span>
+            <div class="task-info">
+                <span class="task-content">${task.title}</span>
+                ${task.due_date ? `<span class="task-due-date">截止日期: ${task.due_date}</span>` : ''}
+            </div>
             <div class="task-actions">
-                <button onclick="editTask(${task.id}, '${task.title}')">编辑</button>
+                <button onclick="showEditModal(${task.id}, '${task.title}', '${task.due_date || ''}')">编辑</button>
                 <button class="delete-btn" onclick="deleteTask(${task.id})">删除</button>
             </div>
         `;
@@ -29,7 +78,9 @@ function renderTasks(tasks) {
 // 添加新任务
 async function addTask() {
     const input = document.getElementById('newTask');
+    const dateInput = document.getElementById('taskDueDate');
     const title = input.value.trim();
+    const dueDate = dateInput.value;
     
     if (!title) return;
     
@@ -38,11 +89,49 @@ async function addTask() {
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ title })
+        body: JSON.stringify({ 
+            title,
+            due_date: dueDate || null
+        })
     });
     
     if (response.ok) {
         input.value = '';
+        dateInput.value = '';
+        fetchTasks();
+    }
+}
+
+// 显示编辑模态框
+function showEditModal(taskId, title, dueDate) {
+    currentEditingTaskId = taskId;
+    document.getElementById('editTaskTitle').value = title;
+    document.getElementById('editTaskDueDate').value = dueDate;
+    openModal();
+}
+
+// 保存编辑的任务
+saveTaskBtn.onclick = async function() {
+    if (!currentEditingTaskId) return;
+    
+    const title = document.getElementById('editTaskTitle').value.trim();
+    const dueDate = document.getElementById('editTaskDueDate').value;
+    
+    if (!title) return;
+    
+    const response = await fetch(`/api/tasks/${currentEditingTaskId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+            title,
+            due_date: dueDate || null
+        })
+    });
+    
+    if (response.ok) {
+        closeModal();
         fetchTasks();
     }
 }
@@ -55,25 +144,6 @@ async function toggleTask(taskId, completed) {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({ completed })
-    });
-    
-    if (response.ok) {
-        fetchTasks();
-    }
-}
-
-// 编辑任务
-async function editTask(taskId, currentTitle) {
-    const newTitle = prompt('编辑任务:', currentTitle);
-    
-    if (newTitle === null || newTitle.trim() === '') return;
-    
-    const response = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ title: newTitle })
     });
     
     if (response.ok) {
