@@ -4,3 +4,4 @@ demo/test/insert/.env
 webui_demo/tasks.db
 
 *.pyc
+.DS_Store
