@@ -43,7 +43,11 @@ class TaskEditDialog(QDialog):
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.date_edit.setDate(QDate.currentDate())
+        # 允许空日期
+        minimum_date = QDate(100, 1, 1)  # 使用 100-01-01 作为哨兵日期
+        self.date_edit.setMinimumDate(minimum_date)
+        self.date_edit.setSpecialValueText("无截止日期")
+        self.date_edit.setDate(minimum_date)  # 设置为最小日期以显示特殊文本
         
         # 优先级选择下拉框
         self.priority_combo = QComboBox()
@@ -127,20 +131,27 @@ class TaskEditDialog(QDialog):
             
         self.title_edit.setText(self.task.title)
         
-        if self.task.due_date:
-            self.date_edit.setDate(QDate(
-                self.task.due_date.year,
-                self.task.due_date.month,
-                self.task.due_date.day
-            ))
+        # 设置截止日期
+        show_as_null_date = False
+        if self.task.due_date is None:
+            show_as_null_date = True
+        elif (self.task.due_date.year == 1752 and
+              self.task.due_date.month == 9 and
+              self.task.due_date.day == 14):
+            show_as_null_date = True
+
+        if show_as_null_date:
+            self.date_edit.setDate(self.date_edit.minimumDate()) # This should be QDate(100,1,1)
+        else:
+            # self.task.due_date is a valid date, not None, and not 1752-09-14
+            q_task_date = QDate(self.task.due_date.year, self.task.due_date.month, self.task.due_date.day)
+            self.date_edit.setDate(q_task_date)
             
         # 设置优先级
         index = self.priority_combo.findData(self.task.priority)
         if index >= 0:
             self.priority_combo.setCurrentIndex(index)
-        else:
-            self.date_edit.setDate(QDate())
-            
+        
         # 选中任务已有的标签
         for tag in self.task.tags:
             if tag.id in self.tag_map:
@@ -341,11 +352,16 @@ class TaskTab(QWidget):
         # 输入行
         input_row = QHBoxLayout()
         self.new_title_edit = QLineEdit()
-        self.new_title_edit.setPlaceholderText("添加新任务…")
+        self.new_title_edit.setPlaceholderText("添加新任务")
+        
         self.new_date_edit = QDateEdit()
         self.new_date_edit.setCalendarPopup(True)
         self.new_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.new_date_edit.setDate(QDate.currentDate())
+        # 允许空日期
+        minimum_date_for_new = QDate(100, 1, 1)  # 使用 100-01-01 作为哨兵日期
+        self.new_date_edit.setMinimumDate(minimum_date_for_new)
+        self.new_date_edit.setSpecialValueText("无截止日期")
+        self.new_date_edit.setDate(minimum_date_for_new)  # 设置为最小日期以显示特殊文本
         
         # 优先级选择下拉框
         self.priority_combo = QComboBox()
@@ -452,10 +468,19 @@ class TaskTab(QWidget):
         self.table.setItem(row, 1, title_item)
         
         # 截止日期
-        due_text = task.due_date.strftime("%Y-%m-%d") if task.due_date else ""
-        due_item = QTableWidgetItem(due_text)
-        due_item.setTextAlignment(Qt.AlignCenter)
-        self.table.setItem(row, 2, due_item)
+        due_date_display_str = "无截止日期" # Default to show if effectively null
+        if task.due_date is not None:
+            is_1752_date = (task.due_date.year == 1752 and
+                            task.due_date.month == 9 and
+                            task.due_date.day == 14)
+            if not is_1752_date:
+                # It's a valid date and not the 1752 placeholder, so format it
+                due_date_display_str = task.due_date.strftime("%Y-%m-%d")
+        # If task.due_date is None, or if it's the 1752 date, due_date_display_str remains "无截止日期"
+        
+        due_date_item = QTableWidgetItem(due_date_display_str)
+        due_date_item.setTextAlignment(Qt.AlignCenter)
+        self.table.setItem(row, 2, due_date_item)
         
         # 优先级
         priority_item = QTableWidgetItem(task.get_priority_name())
@@ -527,7 +552,7 @@ class TaskTab(QWidget):
         
         # 重置输入
         self.new_title_edit.clear()
-        self.new_date_edit.setDate(QDate())
+        self.new_date_edit.setDate(self.new_date_edit.minimumDate()) # Reset to show "无截止日期"
         self.selected_tag_ids = []
         self.tag_btn.setText("选择标签")
         

@@ -168,7 +168,13 @@ class TaskController:
         Returns:
             datetime对象，如果日期无效则返回None
         """
-        if not date.isValid():
+        # 检查日期是否有效，或者是否为 QDate() (无效的空QDate对象)，
+        # 或者是否为我们的 UI 哨兵日期 (100-01-01)，
+        # 或者是否为历史遗留的哨兵日期 (1752-09-14)
+        if not date.isValid() or \
+           date == QDate() or \
+           (date.year() == 100 and date.month() == 1 and date.day() == 1) or \
+           (date.year() == 1752 and date.month() == 9 and date.day() == 14):
             return None
         return datetime(date.year(), date.month(), date.day())
         
