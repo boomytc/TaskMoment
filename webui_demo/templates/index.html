@@ -15,6 +15,11 @@
                 <div class="date-input-container">
                     <input type="date" id="taskDueDate" class="date-input" title="选择截止日期">
                 </div>
+                <div class="tag-select-container">
+                    <select id="taskTag" class="tag-select" title="选择标签">
+                        <option value="">无标签</option>
+                    </select>
+                </div>
             </div>
             <button onclick="addTask()">添加</button>
         </div>
@@ -38,6 +43,12 @@
                 <div class="form-group">
                     <label for="editTaskDueDate">截止日期：</label>
                     <input type="date" id="editTaskDueDate">
+                </div>
+                <div class="form-group">
+                    <label for="editTaskTag">标签：</label>
+                    <select id="editTaskTag">
+                        <option value="">无标签</option>
+                    </select>
                 </div>
             </div>
             <div class="modal-footer">

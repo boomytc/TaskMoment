@@ -5,7 +5,7 @@ const saveTaskBtn = document.getElementById('saveTaskBtn');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
 let currentEditingTaskId = null;
 
-// 初始化日期选择器的点击处理
+// 初始化日期选择器和标签选择器的点击处理
 document.addEventListener('DOMContentLoaded', function() {
     const dateInput = document.getElementById('taskDueDate');
     const dateContainer = document.querySelector('.date-input-container');
@@ -21,7 +21,37 @@ document.addEventListener('DOMContentLoaded', function() {
             dateInput.showPicker();
         }
     });
+
+    // 初始化获取标签列表
+    fetchTags();
 });
+
+// 获取所有标签
+async function fetchTags() {
+    const response = await fetch('/api/tags');
+    const tags = await response.json();
+    updateTagSelects(tags);
+}
+
+// 更新所有标签选择框
+function updateTagSelects(tags) {
+    const selects = [
+        document.getElementById('taskTag'),
+        document.getElementById('editTaskTag')
+    ];
+    
+    selects.forEach(select => {
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">无标签</option>';
+        tags.forEach(tag => {
+            const option = document.createElement('option');
+            option.value = tag.id;
+            option.textContent = tag.tag;
+            select.appendChild(option);
+        });
+        select.value = currentValue;
+    });
+}
 
 // 关闭模态框
 function closeModal() {
@@ -63,11 +93,13 @@ function renderTasks(tasks) {
             <input type="checkbox" ${task.completed ? 'checked' : ''} 
                    onchange="toggleTask(${task.id}, this.checked)">
             <div class="task-info">
-                <span class="task-content">${task.title}</span>
+                <span class="task-content">
+                    ${task.title}
+                </span>
                 ${task.due_date ? `<span class="task-due-date">截止日期: ${task.due_date}</span>` : ''}
             </div>
             <div class="task-actions">
-                <button onclick="showEditModal(${task.id}, '${task.title}', '${task.due_date || ''}')">编辑</button>
+                <button onclick="showEditModal(${task.id}, '${task.title}', '${task.due_date || ''}', ${task.tag_id || 'null'})">编辑</button>
                 <button class="delete-btn" onclick="deleteTask(${task.id})">删除</button>
             </div>
         `;
@@ -79,10 +111,17 @@ function renderTasks(tasks) {
 async function addTask() {
     const input = document.getElementById('newTask');
     const dateInput = document.getElementById('taskDueDate');
-    const title = input.value.trim();
+    const tagSelect = document.getElementById('taskTag');
+    let title = input.value.trim();
     const dueDate = dateInput.value;
     
     if (!title) return;
+    
+    // 如果选择了标签，添加到标题末尾
+    if (tagSelect.value) {
+        const tagOption = tagSelect.options[tagSelect.selectedIndex];
+        title = `${title} #${tagOption.textContent}`;
+    }
     
     const response = await fetch('/api/tasks', {
         method: 'POST',
@@ -98,15 +137,17 @@ async function addTask() {
     if (response.ok) {
         input.value = '';
         dateInput.value = '';
+        tagSelect.value = '';
         fetchTasks();
     }
 }
 
 // 显示编辑模态框
-function showEditModal(taskId, title, dueDate) {
+function showEditModal(taskId, title, dueDate, tagId) {
     currentEditingTaskId = taskId;
     document.getElementById('editTaskTitle').value = title;
     document.getElementById('editTaskDueDate').value = dueDate;
+    document.getElementById('editTaskTag').value = '';  // 重置标签选择框
     openModal();
 }
 
@@ -114,10 +155,19 @@ function showEditModal(taskId, title, dueDate) {
 saveTaskBtn.onclick = async function() {
     if (!currentEditingTaskId) return;
     
-    const title = document.getElementById('editTaskTitle').value.trim();
-    const dueDate = document.getElementById('editTaskDueDate').value;
+    const titleInput = document.getElementById('editTaskTitle');
+    const dueDateInput = document.getElementById('editTaskDueDate');
+    const tagSelect = document.getElementById('editTaskTag');
+    let title = titleInput.value.trim();
     
     if (!title) return;
+    
+    // 如果选择了新标签，添加到标题末尾
+    if (tagSelect.value) {
+        const tagOption = tagSelect.options[tagSelect.selectedIndex];
+        title = `${title} #${tagOption.textContent}`;
+        tagSelect.value = ''; // 重置标签选择
+    }
     
     const response = await fetch(`/api/tasks/${currentEditingTaskId}`, {
         method: 'PUT',
@@ -126,7 +176,7 @@ saveTaskBtn.onclick = async function() {
         },
         body: JSON.stringify({ 
             title,
-            due_date: dueDate || null
+            due_date: dueDateInput.value || null
         })
     });
     
