@@ -1,7 +1,6 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Dict, Optional, Any
 
-from PySide6.QtCore import QDate
 from sqlalchemy import case, desc, asc
 
 from app.models.task import Task, Priority
@@ -61,19 +60,27 @@ class TaskController:
         """
         return self.session.query(Task).get(task_id)
         
-    def create_task(self, title: str, due_date: Optional[datetime] = None, tag_ids: List[int] = None, priority: int = Priority.NONE) -> Task:
+    def create_task(self, title: str, due_date: Optional[str] = None, tag_ids: List[int] = None, priority: int = Priority.NONE) -> Task:
         """创建新任务
         
         Args:
             title: 任务标题
-            due_date: 截止日期
+            due_date: 截止日期 (yyyy-MM-dd 格式字符串或 None)
             tag_ids: 标签ID列表
             priority: 优先级，默认为无
-            
+        
         Returns:
             创建的任务对象
         """
-        task = Task(title=title, due_date=due_date, priority=priority)
+        parsed_due_date: Optional[date] = None
+        if due_date:
+            try:
+                parsed_due_date = datetime.strptime(due_date, "%Y-%m-%d").date()
+            except ValueError:
+                # 如果格式不正确，可以记录日志或按 None 处理
+                parsed_due_date = None
+
+        task = Task(title=title, due_date=parsed_due_date, priority=priority)
         self.session.add(task)
         
         # 添加标签
@@ -91,8 +98,8 @@ class TaskController:
         
         Args:
             task_id: 任务ID
-            data: 要更新的数据字典，可包含title, due_date, tag_ids
-            
+            data: 要更新的数据字典，可包含title, due_date (yyyy-MM-dd str or None), tag_ids, priority, completed
+        
         Returns:
             更新后的任务对象，如果任务不存在则返回None
         """
@@ -104,7 +111,16 @@ class TaskController:
         if 'title' in data:
             task.title = data['title']
         if 'due_date' in data:
-            task.due_date = data['due_date']
+            due_date_str = data['due_date']
+            if due_date_str:
+                try:
+                    task.due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    # 如果格式不正确，可以记录日志或保持原样/设为None
+                    task.due_date = None # 或者选择不修改: pass
+            else:
+                task.due_date = None # 如果传入 None，则设为 None
+
         if 'completed' in data:
             task.completed = data['completed']
         if 'priority' in data:
@@ -157,26 +173,6 @@ class TaskController:
         task.completed = not task.completed
         self.session.commit()
         return task
-        
-    @staticmethod
-    def parse_date(date: QDate) -> Optional[datetime]:
-        """将QDate转换为datetime
-        
-        Args:
-            date: QDate对象
-            
-        Returns:
-            datetime对象，如果日期无效则返回None
-        """
-        # 检查日期是否有效，或者是否为 QDate() (无效的空QDate对象)，
-        # 或者是否为我们的 UI 哨兵日期 (100-01-01)，
-        # 或者是否为历史遗留的哨兵日期 (1752-09-14)
-        if not date.isValid() or \
-           date == QDate() or \
-           (date.year() == 100 and date.month() == 1 and date.day() == 1) or \
-           (date.year() == 1752 and date.month() == 9 and date.day() == 14):
-            return None
-        return datetime(date.year(), date.month(), date.day())
         
     def get_tasks_by_priority(self, priority: int) -> List[Task]:
         """获取指定优先级的任务

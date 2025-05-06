@@ -2,7 +2,7 @@ from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
-    QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView, 
+    QCalendarWidget, QDialogButtonBox, QTableWidget, QTableWidgetItem, QHeaderView, 
     QDialog, QLabel, QMessageBox, QGridLayout, QListWidget, 
     QListWidgetItem, QAbstractItemView, QComboBox
 )
@@ -34,21 +34,25 @@ class TaskEditDialog(QDialog):
         
         # 如果是编辑任务，填充表单
         if task:
-            self._populate_form()
+            self.set_task_data(task)
     
     def _init_ui(self):
         """初始化UI"""
         # 创建控件
         self.title_edit = QLineEdit()
-        self.date_edit = QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDisplayFormat("yyyy-MM-dd")
-        # 允许空日期
-        minimum_date = QDate(100, 1, 1)  # 使用 100-01-01 作为哨兵日期
-        self.date_edit.setMinimumDate(minimum_date)
-        self.date_edit.setSpecialValueText("无截止日期")
-        self.date_edit.setDate(minimum_date)  # 设置为最小日期以显示特殊文本
         
+        # 新的日期选择UI
+        self.date_display = QLineEdit()
+        self.date_display.setPlaceholderText("无截止日期")
+        self.date_display.setReadOnly(True)
+        self.date_button = QPushButton("📅") # 修正图标
+        self.date_button.setToolTip("选择截止日期")
+        self.date_button.clicked.connect(self._open_calendar_dialog)
+
+        date_layout = QHBoxLayout()
+        date_layout.addWidget(self.date_display)
+        date_layout.addWidget(self.date_button)
+
         # 优先级选择下拉框
         self.priority_combo = QComboBox()
         self.priority_combo.addItem("无优先级", Priority.NONE)
@@ -80,7 +84,7 @@ class TaskEditDialog(QDialog):
         layout.addWidget(QLabel("任务内容:"), 0, 0)
         layout.addWidget(self.title_edit, 0, 1)
         layout.addWidget(QLabel("截止日期:"), 1, 0)
-        layout.addWidget(self.date_edit, 1, 1)
+        layout.addLayout(date_layout, 1, 1) # 使用新的 date_layout
         layout.addWidget(QLabel("优先级:"), 2, 0)
         layout.addWidget(self.priority_combo, 2, 1)
         layout.addWidget(QLabel("标签:"), 3, 0)
@@ -124,36 +128,82 @@ class TaskEditDialog(QDialog):
             self.tag_list.addItem(item)
             self.tag_map[tag.id] = item
     
-    def _populate_form(self):
-        """填充表单数据"""
-        if not self.task:
-            return
-            
-        self.title_edit.setText(self.task.title)
-        
-        # 设置截止日期
-        show_as_null_date = False
-        if self.task.due_date is None:
-            show_as_null_date = True
-        elif (self.task.due_date.year == 1752 and
-              self.task.due_date.month == 9 and
-              self.task.due_date.day == 14):
-            show_as_null_date = True
+    def _open_calendar_dialog(self):
+        # 标记是否已选择"无截止日期"
+        no_due_date_selected = [False]
+        dialog = QDialog(self)
+        dialog.setWindowTitle("选择截止日期")
+        layout = QVBoxLayout(dialog)
 
-        if show_as_null_date:
-            self.date_edit.setDate(self.date_edit.minimumDate()) # This should be QDate(100,1,1)
+        calendar = QCalendarWidget(dialog)
+        calendar.setMinimumDate(QDate.currentDate()) # 只能选择当天及以后
+        if self.date_display.text() != "无截止日期" and self.date_display.text():
+            try:
+                current_date = QDate.fromString(self.date_display.text(), "yyyy-MM-dd")
+                if current_date.isValid():
+                    calendar.setSelectedDate(current_date)
+            except Exception:
+                pass # 如果解析失败，则不设置日期
+
+        layout.addWidget(calendar)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Reset, dialog)
+        clear_button = button_box.button(QDialogButtonBox.Reset)
+        if clear_button: # QDialogButtonBox.Reset 可能不存在于所有样式中
+            clear_button.setText("无截止日期")
+            clear_button.clicked.connect(lambda: self._set_no_due_date_edit(dialog, no_due_date_selected))
+        
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        
+        # QCalendarWidget 没有直接的清除按钮，我们通过 Reset 按钮实现
+        # 如果 Reset 按钮不存在，则需要手动添加一个“清除”按钮
+        if not clear_button:
+            manual_clear_button = QPushButton("无截止日期")
+            manual_clear_button.clicked.connect(lambda: self._set_no_due_date_edit(dialog, no_due_date_selected))
+            button_box.addButton(manual_clear_button, QDialogButtonBox.ActionRole)
+
+        layout.addWidget(button_box)
+        dialog.setLayout(layout)
+
+        if dialog.exec():
+            if no_due_date_selected[0]:
+                # 已在_set_no_due_date_edit中设置为"无截止日期"
+                pass
+            else:
+                selected_date = calendar.selectedDate()
+                self.date_display.setText(selected_date.toString("yyyy-MM-dd"))
+        # 如果用户按下了 Cancel，则不做任何操作
+
+    def _set_no_due_date_edit(self, dialog, no_due_date_flag):
+        """设置为无截止日期并关闭对话框"""
+        self.date_display.setText("无截止日期")
+        no_due_date_flag[0] = True
+        dialog.accept()
+
+    def set_task_data(self, task):
+        """设置任务数据显示到UI"""
+        self.title_edit.setText(task.title)
+        if task.due_date:
+            # 兼容字符串或 datetime.date 两种类型
+            if isinstance(task.due_date, str):
+                date_str = task.due_date
+            else:
+                # 假设为 datetime.date 类型
+                date_str = task.due_date.strftime("%Y-%m-%d")
+            self.date_display.setText(date_str)
         else:
-            # self.task.due_date is a valid date, not None, and not 1752-09-14
-            q_task_date = QDate(self.task.due_date.year, self.task.due_date.month, self.task.due_date.day)
-            self.date_edit.setDate(q_task_date)
-            
+            self.date_display.setText("无截止日期")
+        
         # 设置优先级
-        index = self.priority_combo.findData(self.task.priority)
+        # 将整数的 task.priority 转换为 Priority 枚举成员
+        priority_enum_member = Priority(task.priority)
+        index = self.priority_combo.findData(priority_enum_member)
         if index >= 0:
             self.priority_combo.setCurrentIndex(index)
         
         # 选中任务已有的标签
-        for tag in self.task.tags:
+        for tag in task.tags:
             if tag.id in self.tag_map:
                 self.tag_map[tag.id].setSelected(True)
     
@@ -180,7 +230,7 @@ class TaskEditDialog(QDialog):
         # 清空输入框
         self.new_tag_edit.clear()
     
-    def get_data(self):
+    def get_task_data(self):
         """获取表单数据
         
         Returns:
@@ -206,16 +256,22 @@ class TaskEditDialog(QDialog):
                 selected_tags.append(tag.id)
                 
         # 获取截止日期
-        due_date = self.task_controller.parse_date(self.date_edit.date())
-        
+        due_date_str = self.date_display.text()
+        due_date = None
+        if due_date_str and due_date_str != "无截止日期":
+            # QDate.fromString 如果格式不匹配会返回一个无效的QDate，我们需要检查
+            parsed_date = QDate.fromString(due_date_str, "yyyy-MM-dd")
+            if parsed_date.isValid():
+                 due_date = parsed_date.toString("yyyy-MM-dd")
+
         # 获取优先级
         priority = self.priority_combo.currentData()
         
         return {
             "title": title,
             "due_date": due_date,
-            "tag_ids": selected_tags,
-            "priority": priority
+            "priority": priority,
+            "tag_ids": selected_tags
         }
 
 
@@ -324,27 +380,21 @@ class TaskTab(QWidget):
     # 定义信号
     task_changed = Signal()
     
-    def __init__(self, session):
+    def __init__(self, task_controller, tag_controller, parent=None):
         """初始化标签页
         
         Args:
-            session: 数据库会话
+            task_controller: 任务控制器
+            tag_controller: 标签控制器
+            parent: 父窗口
         """
-        super().__init__()
-        
-        # 创建控制器
-        self.task_controller = TaskController(session)
-        self.tag_controller = TagController(session)
-        
-        # 初始化UI
+        super().__init__(parent)
+        self.task_controller = task_controller
+        self.tag_controller = tag_controller
+        self.selected_tags_for_new_task = []
         self._setup_ui()
-        
-        # 加载任务
         self.load_tasks()
-        
-        # 初始化标签选择状态
-        self.selected_tag_ids = []
-    
+
     def _setup_ui(self):
         """设置UI"""
         layout = QVBoxLayout(self)
@@ -354,35 +404,29 @@ class TaskTab(QWidget):
         self.new_title_edit = QLineEdit()
         self.new_title_edit.setPlaceholderText("添加新任务")
         
-        self.new_date_edit = QDateEdit()
-        self.new_date_edit.setCalendarPopup(True)
-        self.new_date_edit.setDisplayFormat("yyyy-MM-dd")
-        # 允许空日期
-        minimum_date_for_new = QDate(100, 1, 1)  # 使用 100-01-01 作为哨兵日期
-        self.new_date_edit.setMinimumDate(minimum_date_for_new)
-        self.new_date_edit.setSpecialValueText("无截止日期")
-        self.new_date_edit.setDate(minimum_date_for_new)  # 设置为最小日期以显示特殊文本
+        # 新的日期选择UI (替换 QDateEdit)
+        self.new_date_display = QLineEdit()
+        self.new_date_display.setPlaceholderText("无截止日期")
+        self.new_date_display.setReadOnly(True)
+        self.new_date_button = QPushButton("📅")
+        self.new_date_button.setToolTip("选择截止日期")
+        self.new_date_button.clicked.connect(self._open_add_task_calendar_dialog)
         
-        # 优先级选择下拉框
-        self.priority_combo = QComboBox()
-        self.priority_combo.addItem("无优先级", Priority.NONE)
-        self.priority_combo.addItem("低优先级", Priority.LOW)
-        self.priority_combo.addItem("中优先级", Priority.MEDIUM)
-        self.priority_combo.addItem("高优先级", Priority.HIGH)
+        # 新增：优先级选择下拉框
+        self.priority_combo_new_task = QComboBox()
+        self.priority_combo_new_task.addItem("无", Priority.NONE)
+        self.priority_combo_new_task.addItem("低", Priority.LOW)
+        self.priority_combo_new_task.addItem("中", Priority.MEDIUM)
+        self.priority_combo_new_task.addItem("高", Priority.HIGH)
         
-        # 为优先级选项设置颜色
-        self.priority_combo.setItemData(0, "#808080", Qt.ForegroundRole)  # 灰色
-        self.priority_combo.setItemData(1, "#4D94FF", Qt.ForegroundRole)  # 蓝色
-        self.priority_combo.setItemData(2, "#FFD700", Qt.ForegroundRole)  # 黄色
-        self.priority_combo.setItemData(3, "#FF4D4D", Qt.ForegroundRole)  # 红色
-        
-        # 标签选择按钮
         self.tag_btn = QPushButton("选择标签")
-        add_btn = QPushButton("添加")
         
+        add_btn = QPushButton("添加")
+
         input_row.addWidget(self.new_title_edit)
-        input_row.addWidget(self.new_date_edit)
-        input_row.addWidget(self.priority_combo)
+        input_row.addWidget(self.new_date_display)
+        input_row.addWidget(self.new_date_button)
+        input_row.addWidget(self.priority_combo_new_task)
         input_row.addWidget(self.tag_btn)
         input_row.addWidget(add_btn)
         
@@ -403,31 +447,32 @@ class TaskTab(QWidget):
         add_btn.clicked.connect(self.add_task)
         self.tag_btn.clicked.connect(self.select_tags)
         self.table.cellChanged.connect(self.handle_cell_changed)
-    
+        self.table.itemSelectionChanged.connect(self._on_task_selection_changed)
+
     def select_tags(self):
         """打开标签选择对话框"""
         dialog = TagSelectionDialog(
             self.tag_controller,
-            self.selected_tag_ids,
+            self.selected_tags_for_new_task,
             self
         )
         
         if dialog.exec() == QDialog.Accepted:
             # 获取选中的标签
-            self.selected_tag_ids = dialog.get_selected_tag_ids()
+            self.selected_tags_for_new_task = dialog.get_selected_tag_ids()
             
             # 更新标签按钮文本
             self._update_tag_button_text()
-    
+
     def _update_tag_button_text(self):
         """更新标签按钮文本"""
-        if not self.selected_tag_ids:
+        if not self.selected_tags_for_new_task:
             self.tag_btn.setText("选择标签")
             return
             
         # 获取所有选中标签的名称
         tag_names = []
-        for tag_id in self.selected_tag_ids:
+        for tag_id in self.selected_tags_for_new_task:
             tag = self.tag_controller.get_tag_by_id(tag_id)
             if tag:
                 tag_names.append(tag.tag)
@@ -523,117 +568,163 @@ class TaskTab(QWidget):
             font.setStrikeOut(True)
             title_item.setFont(font)
     
+    def _open_add_task_calendar_dialog(self):
+        # 标记是否已选择"无截止日期"
+        no_due_date_selected = [False]  # 使用列表以便在lambda中可以修改
+        dialog = QDialog(self)
+        dialog.setWindowTitle("选择截止日期")
+        layout = QVBoxLayout(dialog)
+
+        calendar = QCalendarWidget(dialog)
+        calendar.setMinimumDate(QDate.currentDate()) # 只能选择当天及以后
+        if self.new_date_display.text() != "无截止日期" and self.new_date_display.text():
+            try:
+                current_date = QDate.fromString(self.new_date_display.text(), "yyyy-MM-dd")
+                if current_date.isValid():
+                    calendar.setSelectedDate(current_date)
+            except Exception:
+                pass # 如果解析失败，则不设置日期
+
+        layout.addWidget(calendar)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Reset, dialog)
+        clear_button = button_box.button(QDialogButtonBox.Reset)
+        if clear_button: 
+            clear_button.setText("无截止日期")
+            clear_button.clicked.connect(lambda: self._set_no_due_date(dialog, no_due_date_selected))
+        
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        
+        if not clear_button:
+            manual_clear_button = QPushButton("无截止日期")
+            manual_clear_button.clicked.connect(lambda: self._set_no_due_date(dialog, no_due_date_selected))
+            button_box.addButton(manual_clear_button, QDialogButtonBox.ActionRole)
+
+        layout.addWidget(button_box)
+        dialog.setLayout(layout)
+
+        if dialog.exec():
+            if no_due_date_selected[0]:
+                # 已经在_set_no_due_date中设置为"无截止日期"
+                pass
+            else:
+                selected_date = calendar.selectedDate()
+                self.new_date_display.setText(selected_date.toString("yyyy-MM-dd"))
+
+    def _set_no_due_date(self, dialog, no_due_date_flag):
+        """设置为无截止日期并关闭对话框"""
+        self.new_date_display.setText("无截止日期")
+        no_due_date_flag[0] = True
+        dialog.accept()
+        
     def add_task(self):
         """添加新任务"""
-        raw_title = self.new_title_edit.text().strip()
-        if not raw_title:
+        title = self.new_title_edit.text().strip()
+        if not title:
+            QMessageBox.warning(self, "警告", "任务标题不能为空！")
             return
-            
-        # 从标题中提取标签
-        title, tag_in_title = self.task_controller.extract_tag(raw_title)
+
+        due_date_str = self.new_date_display.text()
+        due_date = None
+        if due_date_str and due_date_str != "无截止日期":
+            parsed_date = QDate.fromString(due_date_str, "yyyy-MM-dd")
+            if parsed_date.isValid():
+                due_date = parsed_date.toString("yyyy-MM-dd")
+            else: # 如果解析后日期无效，也视为无截止日期或给出警告
+                # QMessageBox.warning(self, "警告", f"日期格式不正确: {due_date_str}")
+                due_date = None # 或者保持为 None
         
-        # 获取截止日期
-        due_dt = self.task_controller.parse_date(self.new_date_edit.date())
+        priority_str = self.priority_combo_new_task.currentText() # 假设有这样一个优先级选择器
+        priority = Priority.NONE # 默认值
+        if priority_str == "高":
+            priority = Priority.HIGH
+        elif priority_str == "中":
+            priority = Priority.MEDIUM
+        elif priority_str == "低":
+            priority = Priority.LOW
+
+        # task_id, title, due_date, priority, completed, tags, created_at, updated_at
+        task_data = {
+            "title": title,
+            "due_date": due_date,
+            "priority": priority,
+            "tag_ids": self.selected_tags_for_new_task
+        }
         
-        # 准备标签ID列表
-        tag_ids = list(self.selected_tag_ids)
+        new_task = self.task_controller.create_task(**task_data)
         
-        # 获取优先级
-        priority = self.priority_combo.currentData()
-        
-        # 如果标题中有标签，添加到标签列表
-        if tag_in_title:
-            tag = self.tag_controller.get_or_create_tag(tag_in_title)
-            if tag.id not in tag_ids:
-                tag_ids.append(tag.id)
-        
-        # 创建任务
-        self.task_controller.create_task(title, due_dt, tag_ids, priority)
-        
-        # 重置输入
-        self.new_title_edit.clear()
-        self.new_date_edit.setDate(self.new_date_edit.minimumDate()) # Reset to show "无截止日期"
-        self.selected_tag_ids = []
-        self.tag_btn.setText("选择标签")
-        
-        # 更新UI
-        self.load_tasks()
-        
-        # 发出任务变更信号
-        self.task_changed.emit()
-    
+        if new_task:
+            self.load_tasks()
+            self.new_title_edit.clear()
+            self.new_date_display.setText("无截止日期") # 清空日期显示
+            self.selected_tags_for_new_task = [] # 清空已选标签
+            self.tag_btn.setText("选择标签")
+            QMessageBox.information(self, "成功", "任务已添加！")
+            self.task_changed.emit()
+        else:
+            QMessageBox.critical(self, "错误", "添加任务失败！")
+
     def edit_task(self, task_id):
-        """编辑任务
-        
-        Args:
-            task_id: 任务ID
-        """
         task = self.task_controller.get_task_by_id(task_id)
-        if not task:
-            return
-            
-        # 打开编辑对话框
-        dlg = TaskEditDialog(self.task_controller, self.tag_controller, task, self)
-        if dlg.exec() == QDialog.Accepted:
-            data = dlg.get_data()
-            if not data:
-                QMessageBox.warning(self, "错误", "任务标题不能为空")
-                return
-                
-            # 更新任务
-            self.task_controller.update_task(task_id, data)
-            
-            # 更新UI
-            self.load_tasks()
-            
-            # 发出任务变更信号
-            self.task_changed.emit()
-    
+        if task:
+            dialog = TaskEditDialog(self.task_controller, self.tag_controller, task, self)
+            if dialog.exec() == QDialog.Accepted:
+                task_data = dialog.get_task_data() # 修正方法名
+                if task_data:
+                    self.task_controller.update_task(task_id, task_data) # 修正参数传递
+                    self.load_tasks()
+                    self.task_changed.emit()
+                else:
+                    QMessageBox.warning(self, "警告", "任务标题不能为空！")
+            else:
+                pass # 用户取消了编辑
+
     def delete_task(self, task_id):
-        """删除任务
-        
-        Args:
-            task_id: 任务ID
-        """
-        if QMessageBox.question(self, "确认", "确定删除该任务吗？") != QMessageBox.Yes:
-            return
-            
-        # 删除任务
-        if self.task_controller.delete_task(task_id):
-            # 更新UI
+        reply = QMessageBox.question(self, "确认", "确定删除该任务吗？")
+        if reply == QMessageBox.Yes:
+            self.task_controller.delete_task(task_id)
             self.load_tasks()
-            
-            # 发出任务变更信号
             self.task_changed.emit()
-    
+        else:
+            pass # 用户取消了删除
+
     def handle_cell_changed(self, row, column):
-        """处理单元格变更
-        
-        Args:
-            row: 行索引
-            column: 列索引
-        """
-        if column == 0:
+        """处理单元格变更，主要用于任务完成状态切换"""
+        if column == 0: # 第一列是复选框
             item = self.table.item(row, column)
             if not item:
                 return
-                
-            task_id = item.data(Qt.UserRole)
+            
+            task_id = item.data(Qt.UserRole) # 假设任务ID存储在UserRole中
+            if task_id is None:
+                return # 没有关联的任务ID
+            
             task = self.task_controller.get_task_by_id(task_id)
             if not task:
                 return
+
+            new_completed_status = item.checkState() == Qt.CheckState.Checked
+            
+            # 调用控制器更新任务状态
+            # 假设 update_task 可以处理 'completed' 字段
+            updated_task = self.task_controller.update_task(task_id, {"completed": new_completed_status})
+
+            if updated_task:
+                # 更新UI上的删除线
+                title_item = self.table.item(row, 1) # 假设第二列是标题
+                if title_item:
+                    font = title_item.font()
+                    font.setStrikeOut(new_completed_status)
+                    title_item.setFont(font)
                 
-            # 更新任务完成状态
-            self.task_controller.update_task(task_id, {
-                "completed": item.checkState() == Qt.Checked
-            })
-            
-            # 更新UI - 添加或移除删除线
-            title_item = self.table.item(row, 1)
-            if title_item:
-                font = title_item.font()
-                font.setStrikeOut(item.checkState() == Qt.Checked)
-                title_item.setFont(font)
-            
-            # 发出任务变更信号
-            self.task_changed.emit()
+                self.task_changed.emit() # 发出信号通知其他组件（如图表）更新
+            else:
+                # 可以添加错误处理，例如弹窗提示更新失败
+                QMessageBox.warning(self, "错误", f"更新任务 {task.title} 状态失败。")
+                # 恢复复选框状态以匹配实际数据
+                item.setCheckState(Qt.CheckState.Checked if task.completed else Qt.CheckState.Unchecked)
+
+    def _on_task_selection_changed(self):
+        """处理任务选择变化"""
+        pass

@@ -5,7 +5,7 @@ from app.models.tag import Tag
 class TagController:
     """标签控制器，处理标签相关的业务逻辑"""
     
-    def __init__(self, session):
+    def __init__(self, session): 
         """初始化控制器
         
         Args:

@@ -9,16 +9,16 @@ from app.controllers.tag_controller import TagController
 class TagTab(QWidget):
     """标签管理标签页"""
     
-    def __init__(self, session):
+    def __init__(self, tag_controller):
         """初始化标签页
         
         Args:
-            session: 数据库会话
+            tag_controller: TagController 实例
         """
         super().__init__()
         
-        # 创建控制器
-        self.tag_controller = TagController(session)
+        # 使用传入的控制器
+        self.tag_controller = tag_controller
         
         # 初始化UI
         self._setup_ui()

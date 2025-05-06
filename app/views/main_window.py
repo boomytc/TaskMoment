@@ -4,6 +4,8 @@ from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget
 from app.models.base import Session
 from app.views.task_tab import TaskTab
 from app.views.tag_tab import TagTab
+from app.controllers.task_controller import TaskController
+from app.controllers.tag_controller import TagController
 
 class MainWindow(QMainWindow):
     """主窗口"""
@@ -11,29 +13,33 @@ class MainWindow(QMainWindow):
     def __init__(self):
         """初始化主窗口"""
         super().__init__()
-        self.setWindowTitle("任务清单")
+        self.setWindowTitle("TaskMoment")
         self.resize(800, 600)
         
         # 创建数据库会话
         self.session = Session()
         
-        # 设置中央窗口
-        central = QWidget()
-        self.setCentralWidget(central)
+        # 创建控制器实例
+        self.task_controller = TaskController(self.session)
+        self.tag_controller = TagController(self.session)
+
+        # 中心控件
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
         
         # 创建布局
-        vbox = QVBoxLayout(central)
+        vbox = QVBoxLayout(central_widget)
         
         # 创建标签页控件
         self.tab_widget = QTabWidget()
         vbox.addWidget(self.tab_widget)
         
         # 创建任务管理标签页
-        self.task_tab = TaskTab(self.session)
+        self.task_tab = TaskTab(self.task_controller, self.tag_controller)
         self.tab_widget.addTab(self.task_tab, "任务管理")
         
         # 创建标签管理标签页
-        self.tag_tab = TagTab(self.session)
+        self.tag_tab = TagTab(self.tag_controller) 
         self.tab_widget.addTab(self.tag_tab, "标签管理")
         
         # 连接标签页切换信号

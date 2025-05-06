@@ -1,7 +1,6 @@
 from datetime import datetime
 from enum import IntEnum
-
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, SmallInteger
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, SmallInteger, Date
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, task_tags
@@ -21,7 +20,7 @@ class Task(Base):
     title = Column(String(100), nullable=False)
     completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    due_date = Column(DateTime, nullable=True)
+    due_date = Column(Date, nullable=True)
     priority = Column(SmallInteger, default=Priority.NONE, nullable=False)
     
     # 多对多标签关系
