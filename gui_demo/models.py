@@ -1,12 +1,20 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Table
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 
 # --------------------------- Database --------------------------------------
 
 Base = declarative_base()
+
+# 任务标签关联表（多对多关系）
+task_tags = Table(
+    'task_tags',
+    Base.metadata,
+    Column('task_id', Integer, ForeignKey('task.id'), primary_key=True),
+    Column('tag_id', Integer, ForeignKey('tag.id'), primary_key=True)
+)
 
 
 class Tag(Base):
@@ -28,14 +36,21 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     due_date = Column(DateTime, nullable=True)
 
-    tag_id = Column(Integer, ForeignKey("tag.id"), nullable=True)
-    tag = relationship("Tag", backref="tasks")
+    # 移除单一标签关系
+    # tag_id = Column(Integer, ForeignKey("tag.id"), nullable=True)
+    # tag = relationship("Tag", backref="tasks")
+    
+    # 添加多对多标签关系
+    tags = relationship("Tag", secondary=task_tags, backref="tasks")
 
     def display_title(self):
-        """Return title with #tag appended (for UI display)."""
-        if self.tag:
-            return f"{self.title} #{self.tag.tag}"
-        return self.title
+        """返回带有标签的任务标题（用于UI显示）"""
+        if not self.tags:
+            return self.title
+            
+        # 将所有标签添加到标题后面
+        tags_str = " ".join([f"#{tag.tag}" for tag in self.tags])
+        return f"{self.title} {tags_str}"
 
 
 # 在当前文件夹下创建数据库

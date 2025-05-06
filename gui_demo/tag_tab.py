@@ -84,8 +84,8 @@ class TagTab(QWidget):
             name_item.setTextAlignment(Qt.AlignCenter)
             self.tag_table.setItem(row, 0, name_item)
             
-            # 任务数量
-            task_count = self.session.query(Task).filter_by(tag_id=tag.id).count()
+            # 任务数量 - 使用多对多关系查询
+            task_count = len(tag.tasks)
             count_item = QTableWidgetItem(str(task_count))
             count_item.setTextAlignment(Qt.AlignCenter)
             self.tag_table.setItem(row, 1, count_item)
@@ -143,7 +143,7 @@ class TagTab(QWidget):
             return
             
         # 检查是否有任务使用该标签
-        task_count = self.session.query(Task).filter_by(tag_id=tag.id).count()
+        task_count = len(tag.tasks)
         
         message = f"确定要删除标签 '{tag.tag}' 吗?"
         if task_count > 0:

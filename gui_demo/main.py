@@ -42,7 +42,6 @@ class MainWindow(QMainWindow):
         # 根据切换的标签页刷新数据
         if index == 0:  # 任务管理标签页
             self.task_tab.load_tasks()
-            self.task_tab._refresh_tag_combo()
         elif index == 1:  # 标签管理标签页
             self.tag_tab.load_tags()  # 刷新标签列表及任务数量
             
