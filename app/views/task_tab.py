@@ -1,14 +1,15 @@
 from PySide6.QtCore import Qt, QDate, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
     QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView, 
     QDialog, QLabel, QMessageBox, QGridLayout, QListWidget, 
-    QListWidgetItem, QAbstractItemView
+    QListWidgetItem, QAbstractItemView, QComboBox
 )
 
 from app.controllers.task_controller import TaskController
 from app.controllers.tag_controller import TagController
-from app.models.task import Task
+from app.models.task import Task, Priority
 from app.models.tag import Tag
 
 class TaskEditDialog(QDialog):
@@ -44,6 +45,19 @@ class TaskEditDialog(QDialog):
         self.date_edit.setDisplayFormat("yyyy-MM-dd")
         self.date_edit.setDate(QDate.currentDate())
         
+        # 优先级选择下拉框
+        self.priority_combo = QComboBox()
+        self.priority_combo.addItem("无优先级", Priority.NONE)
+        self.priority_combo.addItem("低优先级", Priority.LOW)
+        self.priority_combo.addItem("中优先级", Priority.MEDIUM)
+        self.priority_combo.addItem("高优先级", Priority.HIGH)
+        
+        # 为优先级选项设置颜色
+        self.priority_combo.setItemData(0, "#808080", Qt.ForegroundRole)  # 灰色
+        self.priority_combo.setItemData(1, "#4D94FF", Qt.ForegroundRole)  # 蓝色
+        self.priority_combo.setItemData(2, "#FFD700", Qt.ForegroundRole)  # 黄色
+        self.priority_combo.setItemData(3, "#FF4D4D", Qt.ForegroundRole)  # 红色
+        
         # 标签列表和添加标签控件
         self.tag_list = QListWidget()
         self.tag_list.setSelectionMode(QAbstractItemView.MultiSelection)
@@ -63,7 +77,9 @@ class TaskEditDialog(QDialog):
         layout.addWidget(self.title_edit, 0, 1)
         layout.addWidget(QLabel("截止日期:"), 1, 0)
         layout.addWidget(self.date_edit, 1, 1)
-        layout.addWidget(QLabel("标签:"), 2, 0)
+        layout.addWidget(QLabel("优先级:"), 2, 0)
+        layout.addWidget(self.priority_combo, 2, 1)
+        layout.addWidget(QLabel("标签:"), 3, 0)
         
         # 标签选择区域
         tag_area = QVBoxLayout()
@@ -75,7 +91,7 @@ class TaskEditDialog(QDialog):
         new_tag_layout.addWidget(self.add_tag_btn)
         tag_area.addLayout(new_tag_layout)
         
-        layout.addLayout(tag_area, 2, 1)
+        layout.addLayout(tag_area, 3, 1)
         
         # 按钮区域
         btn_box = QHBoxLayout()
@@ -83,7 +99,7 @@ class TaskEditDialog(QDialog):
         cancel_btn = QPushButton("取消")
         btn_box.addWidget(save_btn)
         btn_box.addWidget(cancel_btn)
-        layout.addLayout(btn_box, 3, 0, 1, 2)
+        layout.addLayout(btn_box, 4, 0, 1, 2)
         
         self.setLayout(layout)
         
@@ -117,6 +133,11 @@ class TaskEditDialog(QDialog):
                 self.task.due_date.month,
                 self.task.due_date.day
             ))
+            
+        # 设置优先级
+        index = self.priority_combo.findData(self.task.priority)
+        if index >= 0:
+            self.priority_combo.setCurrentIndex(index)
         else:
             self.date_edit.setDate(QDate())
             
@@ -176,10 +197,14 @@ class TaskEditDialog(QDialog):
         # 获取截止日期
         due_date = self.task_controller.parse_date(self.date_edit.date())
         
+        # 获取优先级
+        priority = self.priority_combo.currentData()
+        
         return {
             "title": title,
             "due_date": due_date,
-            "tag_ids": selected_tags
+            "tag_ids": selected_tags,
+            "priority": priority
         }
 
 
@@ -322,20 +347,34 @@ class TaskTab(QWidget):
         self.new_date_edit.setDisplayFormat("yyyy-MM-dd")
         self.new_date_edit.setDate(QDate.currentDate())
         
+        # 优先级选择下拉框
+        self.priority_combo = QComboBox()
+        self.priority_combo.addItem("无优先级", Priority.NONE)
+        self.priority_combo.addItem("低优先级", Priority.LOW)
+        self.priority_combo.addItem("中优先级", Priority.MEDIUM)
+        self.priority_combo.addItem("高优先级", Priority.HIGH)
+        
+        # 为优先级选项设置颜色
+        self.priority_combo.setItemData(0, "#808080", Qt.ForegroundRole)  # 灰色
+        self.priority_combo.setItemData(1, "#4D94FF", Qt.ForegroundRole)  # 蓝色
+        self.priority_combo.setItemData(2, "#FFD700", Qt.ForegroundRole)  # 黄色
+        self.priority_combo.setItemData(3, "#FF4D4D", Qt.ForegroundRole)  # 红色
+        
         # 标签选择按钮
         self.tag_btn = QPushButton("选择标签")
         add_btn = QPushButton("添加")
         
-        input_row.addWidget(self.new_title_edit, 3)
-        input_row.addWidget(self.new_date_edit, 1)
-        input_row.addWidget(self.tag_btn, 1)
-        input_row.addWidget(add_btn, 1)
+        input_row.addWidget(self.new_title_edit)
+        input_row.addWidget(self.new_date_edit)
+        input_row.addWidget(self.priority_combo)
+        input_row.addWidget(self.tag_btn)
+        input_row.addWidget(add_btn)
         
         layout.addLayout(input_row)
         
         # 任务表格
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["完成", "任务", "截止日期", "标签", "操作"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["完成", "任务", "截止日期", "优先级", "标签", "操作"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
@@ -418,11 +457,24 @@ class TaskTab(QWidget):
         due_item.setTextAlignment(Qt.AlignCenter)
         self.table.setItem(row, 2, due_item)
         
+        # 优先级
+        priority_item = QTableWidgetItem(task.get_priority_name())
+        priority_item.setTextAlignment(Qt.AlignCenter)
+        
+        # 设置优先级单元格颜色
+        if task.priority > Priority.NONE:
+            color = task.get_priority_color()
+            priority_item.setForeground(QColor("white"))
+            priority_item.setBackground(QColor(color))
+        else:
+            priority_item.setForeground(QColor("gray"))
+        self.table.setItem(row, 3, priority_item)
+        
         # 标签
         tag_text = ", ".join([tag.tag for tag in task.tags]) if task.tags else ""
         tag_item = QTableWidgetItem(tag_text)
         tag_item.setTextAlignment(Qt.AlignCenter)
-        self.table.setItem(row, 3, tag_item)
+        self.table.setItem(row, 4, tag_item)
         
         # 操作按钮
         action_widget = QWidget()
@@ -434,7 +486,7 @@ class TaskTab(QWidget):
         hl.addWidget(edit_btn)
         hl.addWidget(delete_btn)
         hl.addStretch(1)
-        self.table.setCellWidget(row, 4, action_widget)
+        self.table.setCellWidget(row, 5, action_widget)
         
         # 连接信号
         edit_btn.clicked.connect(lambda _, tid=task.id: self.edit_task(tid))
@@ -461,6 +513,9 @@ class TaskTab(QWidget):
         # 准备标签ID列表
         tag_ids = list(self.selected_tag_ids)
         
+        # 获取优先级
+        priority = self.priority_combo.currentData()
+        
         # 如果标题中有标签，添加到标签列表
         if tag_in_title:
             tag = self.tag_controller.get_or_create_tag(tag_in_title)
@@ -468,7 +523,7 @@ class TaskTab(QWidget):
                 tag_ids.append(tag.id)
         
         # 创建任务
-        self.task_controller.create_task(title, due_dt, tag_ids)
+        self.task_controller.create_task(title, due_dt, tag_ids, priority)
         
         # 重置输入
         self.new_title_edit.clear()
