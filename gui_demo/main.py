@@ -7,7 +7,8 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QDateEdit, QComboBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QDialog, QLabel, QMessageBox, QGridLayout
+    QTableWidgetItem, QHeaderView, QDialog, QLabel, QMessageBox, QGridLayout,
+    QTabWidget, QInputDialog
 )
 
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey
@@ -47,9 +48,9 @@ class Task(Base):
         return self.title
 
 
-# Resolve the path to the SQLite DB used by the web version to ensure data is shared.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "webui_demo" / "tasks.db"
+# 在当前文件夹下创建数据库
+CURRENT_DIR = Path(__file__).resolve().parent
+DB_PATH = CURRENT_DIR / "tasks.db"
 
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, connect_args={"check_same_thread": False})
 Session = sessionmaker(bind=engine)
@@ -173,6 +174,21 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         vbox = QVBoxLayout(central)
+        
+        # 创建标签页控件
+        self.tab_widget = QTabWidget()
+        vbox.addWidget(self.tab_widget)
+        
+        # 创建任务管理标签页
+        self.task_tab = QWidget()
+        self.tab_widget.addTab(self.task_tab, "任务管理")
+        
+        # 创建标签管理标签页
+        self.tag_tab = QWidget()
+        self.tab_widget.addTab(self.tag_tab, "标签管理")
+        
+        # 设置任务管理标签页的布局
+        task_layout = QVBoxLayout(self.task_tab)
 
         # ----------- Input Row -------------
         input_row = QHBoxLayout()
@@ -191,7 +207,7 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self.new_tag_combo, 1)
         input_row.addWidget(add_btn)
 
-        vbox.addLayout(input_row)
+        task_layout.addLayout(input_row)
 
         # ----------- Task Table -------------
         self.table = QTableWidget(0, 5)
@@ -202,11 +218,14 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
 
-        vbox.addWidget(self.table)
+        task_layout.addWidget(self.table)
 
         # ----------- Connections -------------
         add_btn.clicked.connect(self.add_task)
         self.table.cellChanged.connect(self.handle_cell_changed)
+        
+        # 设置标签管理标签页的布局
+        self._setup_tag_management_tab()
 
         # Load tasks
         self.load_tasks()
@@ -263,9 +282,10 @@ class MainWindow(QMainWindow):
         hl.setContentsMargins(0, 0, 0, 0)
         edit_btn = QPushButton("编辑")
         delete_btn = QPushButton("删除")
+        hl.addStretch(1)  # 添加前置拉伸以居中按钮
         hl.addWidget(edit_btn)
         hl.addWidget(delete_btn)
-        hl.addStretch()
+        hl.addStretch(1)  # 添加后置拉伸以居中按钮
         self.table.setCellWidget(row, 4, action_widget)
 
         # Connect signals
@@ -345,6 +365,152 @@ class MainWindow(QMainWindow):
                 font = self.table.item(row, 1).font()
                 font.setStrikeOut(task.completed)
                 self.table.item(row, 1).setFont(font)
+                
+    def _setup_tag_management_tab(self):
+        """设置标签管理标签页的界面和功能"""
+        tag_layout = QVBoxLayout(self.tag_tab)
+        
+        # 添加标签区域
+        input_group = QHBoxLayout()
+        self.new_tag_edit = QLineEdit()
+        self.new_tag_edit.setPlaceholderText("输入新标签名称")
+        add_tag_btn = QPushButton("添加标签")
+        input_group.addWidget(self.new_tag_edit, 3)
+        input_group.addWidget(add_tag_btn, 1)
+        
+        tag_layout.addLayout(input_group)
+        
+        # 标签列表
+        self.tag_table = QTableWidget(0, 3)
+        self.tag_table.setHorizontalHeaderLabels(["标签名称", "任务数量", "操作"])
+        self.tag_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tag_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
+        self.tag_table.verticalHeader().setVisible(False)
+        self.tag_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        
+        tag_layout.addWidget(self.tag_table)
+        
+        # 连接信号
+        add_tag_btn.clicked.connect(self.add_tag)
+        
+        # 加载标签
+        self.load_tags()
+        
+    def add_tag(self):
+        """添加新标签"""
+        tag_name = self.new_tag_edit.text().strip()
+        if not tag_name:
+            return
+            
+        # 检查标签是否已存在
+        existing_tag = self.session.query(Tag).filter_by(tag=tag_name).first()
+        if existing_tag:
+            QMessageBox.warning(self, "错误", f"标签 '{tag_name}' 已存在")
+            return
+            
+        # 创建新标签
+        new_tag = Tag(tag=tag_name)
+        self.session.add(new_tag)
+        self.session.commit()
+        
+        # 清空输入框
+        self.new_tag_edit.clear()
+        
+        # 刷新标签列表
+        self.load_tags()
+        # 刷新任务标签下拉框
+        self._refresh_tag_combo()
+        
+    def load_tags(self):
+        """加载所有标签到标签表格中"""
+        self.tag_table.setRowCount(0)
+        
+        # 查询所有标签
+        tags = self.session.query(Tag).all()
+        
+        for tag in tags:
+            row = self.tag_table.rowCount()
+            self.tag_table.insertRow(row)
+            
+            # 标签名称
+            name_item = QTableWidgetItem(tag.tag)
+            name_item.setTextAlignment(Qt.AlignCenter)
+            self.tag_table.setItem(row, 0, name_item)
+            
+            # 任务数量
+            task_count = self.session.query(Task).filter_by(tag_id=tag.id).count()
+            count_item = QTableWidgetItem(str(task_count))
+            count_item.setTextAlignment(Qt.AlignCenter)
+            self.tag_table.setItem(row, 1, count_item)
+            
+            # 操作按钮
+            action_widget = QWidget()
+            hl = QHBoxLayout(action_widget)
+            hl.setContentsMargins(0, 0, 0, 0)
+            
+            edit_btn = QPushButton("编辑")
+            delete_btn = QPushButton("删除")
+            
+            hl.addStretch(1)  # 添加前置拉伸以居中按钮
+            hl.addWidget(edit_btn)
+            hl.addWidget(delete_btn)
+            hl.addStretch(1)  # 添加后置拉伸以居中按钮
+            
+            self.tag_table.setCellWidget(row, 2, action_widget)
+            
+            # 连接信号
+            edit_btn.clicked.connect(lambda _, tid=tag.id: self.edit_tag(tid))
+            delete_btn.clicked.connect(lambda _, tid=tag.id: self.delete_tag(tid))
+    
+    def edit_tag(self, tag_id):
+        """编辑标签"""
+        tag = self.session.query(Tag).get(tag_id)
+        if not tag:
+            return
+            
+        # 弹出输入对话框
+        new_name, ok = QInputDialog.getText(self, "编辑标签", "新标签名称:", QLineEdit.Normal, tag.tag)
+        
+        if ok and new_name.strip():
+            # 检查名称是否已存在
+            existing = self.session.query(Tag).filter(Tag.tag == new_name.strip(), Tag.id != tag_id).first()
+            if existing:
+                QMessageBox.warning(self, "错误", f"标签 '{new_name}' 已存在")
+                return
+                
+            # 更新标签名称
+            tag.tag = new_name.strip()
+            self.session.commit()
+            
+            # 刷新标签列表和任务列表
+            self.load_tags()
+            self.load_tasks()
+            self._refresh_tag_combo()
+    
+    def delete_tag(self, tag_id):
+        """删除标签"""
+        tag = self.session.query(Tag).get(tag_id)
+        if not tag:
+            return
+            
+        # 检查是否有任务使用该标签
+        task_count = self.session.query(Task).filter_by(tag_id=tag.id).count()
+        
+        message = f"确定要删除标签 '{tag.tag}' 吗?"
+        if task_count > 0:
+            message += f"\n该标签当前被 {task_count} 个任务使用。删除后，这些任务将不再有标签。"
+            
+        if QMessageBox.question(self, "确认删除", message) != QMessageBox.Yes:
+            return
+            
+        # 删除标签
+        self.session.delete(tag)
+        self.session.commit()
+        
+        # 刷新标签列表和任务列表
+        self.load_tags()
+        self.load_tasks()
+        self._refresh_tag_combo()
 
 
 # --------------------------- Entry Point -----------------------------------
