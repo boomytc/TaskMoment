@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 from sqlalchemy import case, desc, asc
 
@@ -184,6 +184,35 @@ class TaskController:
             任务列表
         """
         return self.session.query(Task).filter(Task.priority == priority).all()
+        
+    def filter_and_search_tasks(self, keyword: Optional[str] = None, due_date_filter: Optional[str] = None,
+                               status: Optional[bool] = None, priority: Optional[int] = None,
+                               tag_ids: Optional[List[int]] = None) -> Tuple[List[Task], Dict[str, Any]]:
+        """筛选和搜索任务
+        
+        Args:
+            keyword: 搜索关键词（标题中包含）
+            due_date_filter: 截止日期筛选，可选值：'today', 'tomorrow', 'week', 'none', 'overdue', 'future', 或具体日期字符串'yyyy-MM-dd'
+            status: 完成状态，True表示已完成，False表示未完成，None表示不筛选
+            priority: 优先级筛选，对应Priority枚举值，None表示不筛选
+            tag_ids: 标签ID列表，筛选包含任一标签的任务，None表示不筛选
+            
+        Returns:
+            (筛选后的任务列表, 筛选统计信息)
+        """
+        # 调用模型层的筛选方法
+        filtered_tasks = Task.filter_tasks(
+            self.session, keyword, due_date_filter, status, priority, tag_ids
+        )
+        
+        # 准备筛选统计信息
+        stats = {
+            "total_count": len(filtered_tasks),
+            "completed_count": sum(1 for task in filtered_tasks if task.completed),
+            "has_filter": any([keyword, due_date_filter, status is not None, priority is not None, tag_ids])
+        }
+        
+        return filtered_tasks, stats
     
     @staticmethod
     def extract_tag(title: str) -> tuple:

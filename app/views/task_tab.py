@@ -1,17 +1,18 @@
 from PySide6.QtCore import Qt, QDate, Signal, QThreadPool, Slot
-from PySide6.QtGui import QColor, QAction
+from PySide6.QtGui import QColor, QAction, QIcon
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
     QCalendarWidget, QDialogButtonBox, QTableWidget, QTableWidgetItem, QHeaderView, 
     QDialog, QLabel, QMessageBox, QGridLayout, QListWidget, 
-    QListWidgetItem, QAbstractItemView, QComboBox, QCheckBox, QMenu, QDateEdit
+    QListWidgetItem, QAbstractItemView, QComboBox, QCheckBox, QMenu, QDateEdit,
+    QFrame, QToolButton, QSizePolicy, QButtonGroup, QRadioButton, QGroupBox
 )
 from datetime import date
 
 from app.controllers.task_controller import TaskController
 from app.controllers.tag_controller import TagController
 from app.models.task import Task, Priority
-from app.workers import GetAllTasksWorker
+from app.workers import GetAllTasksWorker, FilterTasksWorker
 
 class TaskEditDialog(QDialog):
     """任务编辑对话框"""
@@ -146,6 +147,16 @@ class TaskTab(QWidget):
         self.tag_controller = tag_controller
         self.SessionMaker = SessionMaker
         self.thread_pool = QThreadPool()
+        
+        # 筛选条件状态
+        self.current_filters = {
+            "keyword": None,
+            "due_date_filter": None,
+            "status": None,
+            "priority": None,
+            "tag_ids": None
+        }
+        
         self._init_ui()
         self.load_tasks()
 
@@ -153,48 +164,148 @@ class TaskTab(QWidget):
         """设置UI"""
         layout = QVBoxLayout(self)
         
-        # 工具栏
-        toolbar_layout = QHBoxLayout()
-        self.add_task_button = QPushButton("添加任务")
-        self.add_task_button.clicked.connect(self.open_add_task_dialog)
-        toolbar_layout.addWidget(self.add_task_button)
-        toolbar_layout.addStretch()
-        layout.addLayout(toolbar_layout)
-
-        # 任务列表
+        # 筛选和搜索区域
+        filter_frame = QFrame()
+        filter_frame.setFrameShape(QFrame.StyledPanel)
+        filter_layout = QVBoxLayout(filter_frame)
+        
+        # 搜索框和按钮
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("搜索任务标题...")
+        self.search_input.returnPressed.connect(self.apply_filters)
+        search_button = QPushButton("搜索")
+        search_button.clicked.connect(self.apply_filters)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(search_button)
+        filter_layout.addLayout(search_layout)
+        
+        # 筛选选项
+        filter_options_layout = QHBoxLayout()
+        
+        # 完成状态筛选
+        status_group = QGroupBox("完成状态")
+        status_layout = QHBoxLayout()
+        self.status_group = QButtonGroup(self)
+        self.status_all = QRadioButton("全部")
+        self.status_completed = QRadioButton("已完成")
+        self.status_uncompleted = QRadioButton("未完成")
+        self.status_all.setChecked(True)
+        self.status_group.addButton(self.status_all, 0)
+        self.status_group.addButton(self.status_completed, 1)
+        self.status_group.addButton(self.status_uncompleted, 2)
+        status_layout.addWidget(self.status_all)
+        status_layout.addWidget(self.status_completed)
+        status_layout.addWidget(self.status_uncompleted)
+        status_group.setLayout(status_layout)
+        filter_options_layout.addWidget(status_group)
+        
+        # 优先级筛选
+        priority_group = QGroupBox("优先级")
+        priority_layout = QHBoxLayout()
+        self.priority_combo = QComboBox()
+        self.priority_combo.addItem("全部", -1)
+        self.priority_combo.addItem("无", Priority.NONE)
+        self.priority_combo.addItem("低", Priority.LOW)
+        self.priority_combo.addItem("中", Priority.MEDIUM)
+        self.priority_combo.addItem("高", Priority.HIGH)
+        priority_layout.addWidget(self.priority_combo)
+        priority_group.setLayout(priority_layout)
+        filter_options_layout.addWidget(priority_group)
+        
+        # 截止日期筛选
+        due_date_group = QGroupBox("截止日期")
+        due_date_layout = QHBoxLayout()
+        self.due_date_combo = QComboBox()
+        self.due_date_combo.addItem("全部", "")
+        self.due_date_combo.addItem("今天", "today")
+        self.due_date_combo.addItem("明天", "tomorrow")
+        self.due_date_combo.addItem("本周内", "week")
+        self.due_date_combo.addItem("已逾期", "overdue")
+        self.due_date_combo.addItem("未来", "future")
+        self.due_date_combo.addItem("无截止日期", "none")
+        due_date_layout.addWidget(self.due_date_combo)
+        due_date_group.setLayout(due_date_layout)
+        filter_options_layout.addWidget(due_date_group)
+        
+        filter_layout.addLayout(filter_options_layout)
+        
+        # 标签筛选
+        tags_group = QGroupBox("标签筛选")
+        tags_layout = QHBoxLayout()
+        self.tags_combo = QComboBox()
+        self.tags_combo.addItem("全部标签", -1)
+        all_tags = self.tag_controller.get_all_tags()
+        for tag in all_tags:
+            self.tags_combo.addItem(f"#{tag.tag}", tag.id)
+        tags_layout.addWidget(self.tags_combo)
+        tags_group.setLayout(tags_layout)
+        filter_layout.addWidget(tags_group)
+        
+        # 筛选按钮区域
+        filter_buttons_layout = QHBoxLayout()
+        apply_filter_button = QPushButton("应用筛选")
+        apply_filter_button.clicked.connect(self.apply_filters)
+        reset_filter_button = QPushButton("重置筛选")
+        reset_filter_button.clicked.connect(self.reset_filters)
+        filter_buttons_layout.addWidget(apply_filter_button)
+        filter_buttons_layout.addWidget(reset_filter_button)
+        filter_layout.addLayout(filter_buttons_layout)
+        
+        layout.addWidget(filter_frame)
+        
+        # 筛选结果统计
+        self.filter_stats_label = QLabel("显示全部任务")
+        layout.addWidget(self.filter_stats_label)
+        
+        # 添加任务按钮
+        add_button = QPushButton("添加任务")
+        add_button.clicked.connect(self.open_add_task_dialog)
+        layout.addWidget(add_button)
+        
+        # 任务表格
         self.table = QTableWidget()
-        self.table.setColumnCount(6) # ID, 标题, 截止日期, 优先级, 标签, 完成
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["ID", "标题", "截止日期", "优先级", "标签", "完成"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch) # 标题列拉伸
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents) # 完成列自适应内容
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers) # 禁止直接编辑
-        self.table.setSelectionBehavior(QTableWidget.SelectRows) # 整行选择
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.doubleClicked.connect(self.open_edit_task_dialog_on_double_click)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
-        self.table.doubleClicked.connect(self.open_edit_task_dialog_on_double_click)
         layout.addWidget(self.table)
+        
+        self.setLayout(layout)
 
     def load_tasks(self):
         """异步加载任务列表"""
-        self.add_task_button.setEnabled(False)
-        worker = GetAllTasksWorker(self.SessionMaker)
-        worker.signals.finished.connect(self._on_load_tasks_finished)
-        worker.signals.error.connect(self._on_load_tasks_error)
-        self.thread_pool.start(worker)
+        # 清空表格
+        self.table.setRowCount(0)
+        
+        # 根据当前筛选条件加载任务
+        self.apply_current_filters()
 
     @Slot(object)
-    def _on_load_tasks_finished(self, tasks):
+    def _on_load_tasks_finished(self, result):
         """任务加载完成后的处理"""
+        # 解包结果
+        tasks, stats = result
+        
+        # 清空表格
         self.table.setRowCount(0)
+        
+        # 添加任务到表格
         for task in tasks:
             self._add_task_to_table(task)
-        self.add_task_button.setEnabled(True)
+            
+        # 更新统计信息
+        self.update_filter_stats(stats)
 
     @Slot(str)
     def _on_load_tasks_error(self, error_message):
         """任务加载错误处理"""
         QMessageBox.critical(self, "加载任务失败", error_message)
-        self.add_task_button.setEnabled(True)
 
     def _add_task_to_table(self, task):
         """将任务添加到表格"""
@@ -261,7 +372,7 @@ class TaskTab(QWidget):
             data = dialog.get_task_data()
             if data:
                 self.task_controller.create_task(**data)
-                self.load_tasks()
+                self.apply_current_filters()
                 self.task_changed.emit()
 
     def open_edit_task_dialog_on_double_click(self, item):
@@ -282,7 +393,7 @@ class TaskTab(QWidget):
             data = dialog.get_task_data()
             if data:
                 self.task_controller.update_task(task_id, data)
-                self.load_tasks()
+                self.apply_current_filters()
                 self.task_changed.emit()
 
     def delete_task(self, row):
@@ -292,13 +403,13 @@ class TaskTab(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.task_controller.delete_task(task_id)
-            self.load_tasks()
+            self.apply_current_filters()
             self.task_changed.emit()
 
     def toggle_task_completed_status(self, task_id, checked):
         """切换任务完成状态"""
         self.task_controller.toggle_task_completed(task_id)
-        self.load_tasks()
+        self.apply_current_filters()
         self.task_changed.emit()
 
     def show_context_menu(self, pos):
@@ -319,3 +430,97 @@ class TaskTab(QWidget):
         context_menu.addAction(edit_action)
         context_menu.addAction(delete_action)
         context_menu.exec(self.table.mapToGlobal(pos))
+        
+    def apply_filters(self):
+        """应用筛选条件"""
+        # 获取关键词
+        keyword = self.search_input.text().strip() if self.search_input.text().strip() else None
+        
+        # 获取完成状态
+        status = None
+        if self.status_completed.isChecked():
+            status = True
+        elif self.status_uncompleted.isChecked():
+            status = False
+        
+        # 获取优先级
+        priority = None
+        if self.priority_combo.currentData() != -1:
+            priority = self.priority_combo.currentData()
+        
+        # 获取截止日期筛选
+        due_date_filter = None
+        if self.due_date_combo.currentData():
+            due_date_filter = self.due_date_combo.currentData()
+        
+        # 获取标签筛选
+        tag_ids = None
+        if self.tags_combo.currentData() != -1:
+            tag_ids = [self.tags_combo.currentData()]
+        
+        # 更新当前筛选条件
+        self.current_filters = {
+            "keyword": keyword,
+            "due_date_filter": due_date_filter,
+            "status": status,
+            "priority": priority,
+            "tag_ids": tag_ids
+        }
+        
+        # 应用筛选
+        self.apply_current_filters()
+    
+    def reset_filters(self):
+        """重置所有筛选条件"""
+        # 重置搜索框
+        self.search_input.clear()
+        
+        # 重置完成状态
+        self.status_all.setChecked(True)
+        
+        # 重置优先级
+        self.priority_combo.setCurrentIndex(0)
+        
+        # 重置截止日期
+        self.due_date_combo.setCurrentIndex(0)
+        
+        # 重置标签
+        self.tags_combo.setCurrentIndex(0)
+        
+        # 清空当前筛选条件
+        self.current_filters = {
+            "keyword": None,
+            "due_date_filter": None,
+            "status": None,
+            "priority": None,
+            "tag_ids": None
+        }
+        
+        # 重新加载所有任务
+        self.apply_current_filters()
+    
+    def apply_current_filters(self):
+        """应用当前的筛选条件"""
+        # 创建工作线程加载任务
+        worker = FilterTasksWorker(
+            self.task_controller,
+            self.current_filters["keyword"],
+            self.current_filters["due_date_filter"],
+            self.current_filters["status"],
+            self.current_filters["priority"],
+            self.current_filters["tag_ids"]
+        )
+        worker.signals.result.connect(self._on_load_tasks_finished)
+        worker.signals.error.connect(self._on_load_tasks_error)
+        QThreadPool.globalInstance().start(worker)
+    
+    def update_filter_stats(self, stats):
+        """更新筛选统计信息"""
+        if stats["has_filter"]:
+            self.filter_stats_label.setText(
+                f"筛选结果: 共{stats['total_count']}个任务 (已完成: {stats['completed_count']}, 未完成: {stats['total_count'] - stats['completed_count']})"
+            )
+        else:
+            self.filter_stats_label.setText(
+                f"显示全部任务: 共{stats['total_count']}个任务 (已完成: {stats['completed_count']}, 未完成: {stats['total_count'] - stats['completed_count']})"
+            )
