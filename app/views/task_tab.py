@@ -87,8 +87,24 @@ class TaskEditDialog(QDialog):
         else:
             self.due_date_edit.setDate(self.due_date_edit.minimumDate()) 
 
-        priority_value = self.task.priority if isinstance(self.task.priority, int) else Priority.NONE
-        self.priority_combo.setCurrentIndex(self.priority_combo.findData(priority_value))
+        # 确保优先级值有效，如果无效则使用默认值
+        priority_value = Priority.NONE
+        if hasattr(self.task, 'priority') and self.task.priority is not None:
+            if isinstance(self.task.priority, int):
+                priority_value = self.task.priority
+        
+        # 手动设置优先级，而不使用findData
+        if priority_value == Priority.NONE:
+            self.priority_combo.setCurrentIndex(0)  # 无
+        elif priority_value == Priority.LOW:
+            self.priority_combo.setCurrentIndex(1)  # 低
+        elif priority_value == Priority.MEDIUM:
+            self.priority_combo.setCurrentIndex(2)  # 中
+        elif priority_value == Priority.HIGH:
+            self.priority_combo.setCurrentIndex(3)  # 高
+        else:
+            # 如果是其他值，默认设置为无
+            self.priority_combo.setCurrentIndex(0)
         
         for tag_obj in self.task.tags:
             if tag_obj.id in self.tag_map:
@@ -110,7 +126,10 @@ class TaskEditDialog(QDialog):
         if due_date_qdate != self.due_date_edit.minimumDate():
             due_date_str = due_date_qdate.toString("yyyy-MM-dd")
 
+        # 确保priority始终有一个有效值，默认为Priority.NONE
         priority = self.priority_combo.currentData()
+        if priority is None:
+            priority = Priority.NONE
         
         selected_tag_ids = []
         for item in self.tags_list_widget.selectedItems():
@@ -164,24 +183,39 @@ class TaskTab(QWidget):
         """设置UI"""
         layout = QVBoxLayout(self)
         
-        # 筛选和搜索区域
-        filter_frame = QFrame()
-        filter_frame.setFrameShape(QFrame.StyledPanel)
-        filter_layout = QVBoxLayout(filter_frame)
+        # 搜索区域
+        search_frame = QFrame()
+        search_frame.setFrameShape(QFrame.StyledPanel)
+        search_layout = QHBoxLayout(search_frame)
         
-        # 搜索框和按钮
-        search_layout = QHBoxLayout()
+        # 搜索框
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("搜索任务标题...")
         self.search_input.returnPressed.connect(self.apply_filters)
+        
+        # 搜索按钮
         search_button = QPushButton("搜索")
         search_button.clicked.connect(self.apply_filters)
+        
+        # 展开/折叠筛选选项按钮
+        self.toggle_filter_button = QPushButton("高级筛选 ▼")
+        self.toggle_filter_button.setCheckable(True)
+        self.toggle_filter_button.setChecked(False)
+        self.toggle_filter_button.clicked.connect(self.toggle_filter_options)
+        
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(search_button)
-        filter_layout.addLayout(search_layout)
+        search_layout.addWidget(self.toggle_filter_button)
+        
+        layout.addWidget(search_frame)
+        
+        # 高级筛选选项（默认折叠）
+        self.filter_options_frame = QFrame()
+        self.filter_options_frame.setFrameShape(QFrame.StyledPanel)
+        filter_options_layout = QVBoxLayout(self.filter_options_frame)
         
         # 筛选选项
-        filter_options_layout = QHBoxLayout()
+        filter_groups_layout = QHBoxLayout()
         
         # 完成状态筛选
         status_group = QGroupBox("完成状态")
@@ -198,7 +232,7 @@ class TaskTab(QWidget):
         status_layout.addWidget(self.status_completed)
         status_layout.addWidget(self.status_uncompleted)
         status_group.setLayout(status_layout)
-        filter_options_layout.addWidget(status_group)
+        filter_groups_layout.addWidget(status_group)
         
         # 优先级筛选
         priority_group = QGroupBox("优先级")
@@ -211,7 +245,7 @@ class TaskTab(QWidget):
         self.priority_combo.addItem("高", Priority.HIGH)
         priority_layout.addWidget(self.priority_combo)
         priority_group.setLayout(priority_layout)
-        filter_options_layout.addWidget(priority_group)
+        filter_groups_layout.addWidget(priority_group)
         
         # 截止日期筛选
         due_date_group = QGroupBox("截止日期")
@@ -226,9 +260,9 @@ class TaskTab(QWidget):
         self.due_date_combo.addItem("无截止日期", "none")
         due_date_layout.addWidget(self.due_date_combo)
         due_date_group.setLayout(due_date_layout)
-        filter_options_layout.addWidget(due_date_group)
+        filter_groups_layout.addWidget(due_date_group)
         
-        filter_layout.addLayout(filter_options_layout)
+        filter_options_layout.addLayout(filter_groups_layout)
         
         # 标签筛选
         tags_group = QGroupBox("标签筛选")
@@ -240,7 +274,7 @@ class TaskTab(QWidget):
             self.tags_combo.addItem(f"#{tag.tag}", tag.id)
         tags_layout.addWidget(self.tags_combo)
         tags_group.setLayout(tags_layout)
-        filter_layout.addWidget(tags_group)
+        filter_options_layout.addWidget(tags_group)
         
         # 筛选按钮区域
         filter_buttons_layout = QHBoxLayout()
@@ -250,9 +284,11 @@ class TaskTab(QWidget):
         reset_filter_button.clicked.connect(self.reset_filters)
         filter_buttons_layout.addWidget(apply_filter_button)
         filter_buttons_layout.addWidget(reset_filter_button)
-        filter_layout.addLayout(filter_buttons_layout)
+        filter_options_layout.addLayout(filter_buttons_layout)
         
-        layout.addWidget(filter_frame)
+        # 默认隐藏高级筛选选项
+        self.filter_options_frame.setVisible(False)
+        layout.addWidget(self.filter_options_frame)
         
         # 筛选结果统计
         self.filter_stats_label = QLabel("显示全部任务")
@@ -524,3 +560,14 @@ class TaskTab(QWidget):
             self.filter_stats_label.setText(
                 f"显示全部任务: 共{stats['total_count']}个任务 (已完成: {stats['completed_count']}, 未完成: {stats['total_count'] - stats['completed_count']})"
             )
+    
+    def toggle_filter_options(self):
+        """切换筛选选项的显示/隐藏"""
+        is_visible = not self.filter_options_frame.isVisible()
+        self.filter_options_frame.setVisible(is_visible)
+        
+        # 更新按钮文本
+        if is_visible:
+            self.toggle_filter_button.setText("高级筛选 ▲")
+        else:
+            self.toggle_filter_button.setText("高级筛选 ▼")

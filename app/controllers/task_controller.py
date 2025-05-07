@@ -124,7 +124,9 @@ class TaskController:
         if 'completed' in data:
             task.completed = data['completed']
         if 'priority' in data:
-            task.priority = data['priority']
+            # 确保优先级不为None，如果是None则使用默认值Priority.NONE
+            priority = data['priority']
+            task.priority = Priority.NONE if priority is None else priority
             
         # 更新任务标签
         if 'tag_ids' in data:
