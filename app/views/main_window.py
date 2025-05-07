@@ -1,7 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget
 
-from app.models.base import Session
 from app.views.task_tab import TaskTab
 from app.views.tag_tab import TagTab
 from app.controllers.task_controller import TaskController
@@ -10,14 +9,14 @@ from app.controllers.tag_controller import TagController
 class MainWindow(QMainWindow):
     """主窗口"""
     
-    def __init__(self):
+    def __init__(self, SessionMaker):  # Accept SessionMaker
         """初始化主窗口"""
         super().__init__()
         self.setWindowTitle("TaskMoment")
         self.resize(800, 600)
         
         # 创建数据库会话
-        self.session = Session()
+        self.session = SessionMaker()  # Create session from SessionMaker
         
         # 创建控制器实例
         self.task_controller = TaskController(self.session)
