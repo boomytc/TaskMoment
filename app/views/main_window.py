@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget
 
 from app.views.task_tab import TaskTab
@@ -9,14 +9,14 @@ from app.controllers.tag_controller import TagController
 class MainWindow(QMainWindow):
     """主窗口"""
     
-    def __init__(self, SessionMaker):  # Accept SessionMaker
+    def __init__(self, SessionMaker):
         """初始化主窗口"""
         super().__init__()
         self.setWindowTitle("TaskMoment")
         self.resize(800, 600)
         
-        # 创建数据库会话
-        self.session = SessionMaker()  # Create session from SessionMaker
+        self.SessionMaker = SessionMaker
+        self.session = self.SessionMaker()
         
         # 创建控制器实例
         self.task_controller = TaskController(self.session)
@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
         vbox.addWidget(self.tab_widget)
         
         # 创建任务管理标签页
-        self.task_tab = TaskTab(self.task_controller, self.tag_controller)
+        self.task_tab = TaskTab(self.task_controller, self.tag_controller, self.SessionMaker)
         self.tab_widget.addTab(self.task_tab, "任务管理")
         
         # 创建标签管理标签页
@@ -72,5 +72,9 @@ class MainWindow(QMainWindow):
             event: 关闭事件
         """
         # 关闭数据库会话
-        self.session.close()
+        if self.session:
+            self.session.close()
+        
+        # 等待线程池完成
+        QThreadPool.globalInstance().waitForDone()
         event.accept()
